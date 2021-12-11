@@ -1,66 +1,75 @@
 import {Duration, Stack, StackProps} from 'aws-cdk-lib';
 import { Construct } from 'constructs';
-import { aws_sqs as sqs } from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda'
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb'
-import {DeadLetterQueue} from "aws-cdk-lib/aws-sqs";
+import {DeadLetterQueue, Queue} from "aws-cdk-lib/aws-sqs";
 import * as apigatewayv2 from '@aws-cdk/aws-apigatewayv2-alpha';
 import {HttpLambdaIntegration} from '@aws-cdk/aws-apigatewayv2-integrations-alpha'
 import { SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
 
 export class SqsLambdaExampleStack extends Stack {
+  private table: dynamodb.Table;
+  private emitterLambda: lambda.Function;
+  private receiverLambda: lambda.Function;
+  private queue: Queue;
+
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
-    const table = new dynamodb.Table(this, 'Order', {
+    this.createTable();
+    this.createQueueAndDLQ();
+    this.createLambdas();
+    this.createHttpApi();
+    this.createEventSourceMappingQueueReceiverLambda();
+    this.setupPermissions();
+  }
+
+  private createTable() {
+    this.table = new dynamodb.Table(this, 'Order', {
       partitionKey: {name: 'id', type: dynamodb.AttributeType.STRING},
       readCapacity: 1,
       writeCapacity: 1
     });
+  }
 
-    const queue = new sqs.Queue(this, 'EventDLQ');
-
+  private createQueueAndDLQ() {
+    const queue = new Queue(this, 'EventDLQ');
     const deadLetterQueue: DeadLetterQueue = {
       maxReceiveCount: 5,
-      queue: queue,
+      queue,
     };
 
-    const messageQueue = new sqs.Queue(this, 'EventQueue', {
+    this.queue = new Queue(this, 'EventQueue', {
       visibilityTimeout: Duration.seconds(60),
       deadLetterQueue: deadLetterQueue
     });
+  }
 
-    const emitterLambda = new lambda.Function(this, 'EmitterLambda', {
+  private createLambdas() {
+    this.emitterLambda = new lambda.Function(this, 'EmitterLambda', {
       runtime: lambda.Runtime.NODEJS_14_X,
       code: lambda.Code.fromAsset('lambda'),
       handler: 'sqs_lambda.emitter',
       environment: {
-        QUEUE_URL: messageQueue.queueUrl
+        QUEUE_URL: this.queue.queueUrl
       }
     });
-
-    messageQueue.grantSendMessages(emitterLambda);
-
-    const receiverLambda = new lambda.Function(this, 'ReceiverLambda', {
+    this.receiverLambda = new lambda.Function(this, 'ReceiverLambda', {
       runtime: lambda.Runtime.NODEJS_14_X,
       code: lambda.Code.fromAsset('lambda'),
       handler: 'sqs_lambda.receiver',
       environment: {
-        TABLE_NAME: table.tableName
+        TABLE_NAME: this.table.tableName
       }
     });
+  }
 
-    messageQueue.grantConsumeMessages(receiverLambda);
-    table.grantReadData(receiverLambda);
-
-    const eventSource = new SqsEventSource(messageQueue);
-    receiverLambda.addEventSource(eventSource);
-
+  private createHttpApi() {
     const httpApi = new apigatewayv2.HttpApi(this, 'OrderApi');
 
     const createOrderIntegration = new HttpLambdaIntegration(
         'CreateOrderIntegration',
-        emitterLambda
+        this.emitterLambda
     );
 
     httpApi.addRoutes({
@@ -68,5 +77,16 @@ export class SqsLambdaExampleStack extends Stack {
       methods: [ apigatewayv2.HttpMethod.POST ],
       integration: createOrderIntegration,
     });
+  }
+
+  private createEventSourceMappingQueueReceiverLambda() {
+    const eventSource = new SqsEventSource(this.queue);
+    this.receiverLambda.addEventSource(eventSource);
+  }
+
+  private setupPermissions() {
+    this.queue.grantSendMessages(this.emitterLambda);
+    this.queue.grantConsumeMessages(this.receiverLambda);
+    this.table.grantReadData(this.receiverLambda);
   }
 }
