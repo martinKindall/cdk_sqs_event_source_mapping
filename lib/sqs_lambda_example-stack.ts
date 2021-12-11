@@ -6,6 +6,7 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb'
 import {DeadLetterQueue} from "aws-cdk-lib/aws-sqs";
 import * as apigatewayv2 from '@aws-cdk/aws-apigatewayv2-alpha';
 import {HttpLambdaIntegration} from '@aws-cdk/aws-apigatewayv2-integrations-alpha'
+import { SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
 
 export class SqsLambdaExampleStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
@@ -48,6 +49,12 @@ export class SqsLambdaExampleStack extends Stack {
         TABLE_NAME: table.tableName
       }
     });
+
+    messageQueue.grantConsumeMessages(receiverLambda);
+    table.grantReadData(receiverLambda);
+
+    const eventSource = new SqsEventSource(messageQueue);
+    receiverLambda.addEventSource(eventSource);
 
     const httpApi = new apigatewayv2.HttpApi(this, 'OrderApi');
 
