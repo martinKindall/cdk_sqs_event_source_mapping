@@ -4,6 +4,8 @@ import { aws_sqs as sqs } from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda'
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb'
 import {DeadLetterQueue} from "aws-cdk-lib/aws-sqs";
+import * as apigatewayv2 from '@aws-cdk/aws-apigatewayv2-alpha';
+import {HttpLambdaIntegration} from '@aws-cdk/aws-apigatewayv2-integrations-alpha'
 
 export class SqsLambdaExampleStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
@@ -32,7 +34,6 @@ export class SqsLambdaExampleStack extends Stack {
       code: lambda.Code.fromAsset('lambda'),
       handler: 'sqs_lambda.emitter',
       environment: {
-        LANGUAGE_TABLE_NAME: table.tableName,
         QUEUE_URL: messageQueue.queueUrl
       }
     });
@@ -44,8 +45,21 @@ export class SqsLambdaExampleStack extends Stack {
       code: lambda.Code.fromAsset('lambda'),
       handler: 'sqs_lambda.receiver',
       environment: {
-        LANGUAGE_TABLE_NAME: table.tableName
+        TABLE_NAME: table.tableName
       }
+    });
+
+    const httpApi = new apigatewayv2.HttpApi(this, 'OrderApi');
+
+    const createOrderIntegration = new HttpLambdaIntegration(
+        'CreateOrderIntegration',
+        emitterLambda
+    );
+
+    httpApi.addRoutes({
+      path: '/order',
+      methods: [ apigatewayv2.HttpMethod.POST ],
+      integration: createOrderIntegration,
     });
   }
 }
