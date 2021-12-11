@@ -37,6 +37,8 @@ export class SqsLambdaExampleStack extends Stack {
       }
     });
 
+    messageQueue.grantSendMessages(emitterLambda);
+
     const receiverLambda = new lambda.Function(this, 'ReceiverLambda', {
       runtime: lambda.Runtime.NODEJS_14_X,
       code: lambda.Code.fromAsset('lambda'),
