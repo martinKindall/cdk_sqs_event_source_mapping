@@ -1,8 +1,9 @@
-# Welcome to your CDK TypeScript project!
+# Simple Lambda with SQS pattern using Event Source Mapping 
 
-This is a blank project for TypeScript development with CDK.
+The current project builds the following diagram in a Cloudformation Stack:
 
-The `cdk.json` file tells the CDK Toolkit how to execute your app.
+<img src="./diagram.png" width="400">
+
 
 ## Useful commands
 
